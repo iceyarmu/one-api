@@ -115,7 +115,7 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	// map model name
 	var isModelMapped bool
 	meta.OriginModelName = imageRequest.Model
-	imageRequest.Model, isModelMapped = getMappedModelName(imageRequest.Model, meta.ModelMapping)
+	imageRequest.Model, isModelMapped, _ = getMappedModelName(imageRequest.Model, meta.ModelMapping)
 	meta.ActualModelName = imageRequest.Model
 
 	// model validation
@@ -131,7 +131,7 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 
 	imageModel := imageRequest.Model
 	// Convert the original image model
-	imageRequest.Model, _ = getMappedModelName(imageRequest.Model, billingratio.ImageOriginModelName)
+	imageRequest.Model, _, _ = getMappedModelName(imageRequest.Model, billingratio.ImageOriginModelName)
 	c.Set("response_format", imageRequest.ResponseFormat)
 
 	var requestBody io.Reader

@@ -21,6 +21,15 @@ type StreamOptions struct {
 	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
+type Provider struct {
+	Order          []string `json:"order,omitempty"`
+	Ignore         []string `json:"ignore,omitempty"`
+	AllowFallbacks bool     `json:"allow_fallbacks,omitempty"`
+	Sort           string   `json:"sort,omitempty"`
+	DataCollection string   `json:"data_collection,omitempty"`
+	Quantizations  []string `json:"quantizations,omitempty"`
+}
+
 type GeneralOpenAIRequest struct {
 	// https://platform.openai.com/docs/api-reference/chat/create
 	Messages            []Message       `json:"messages,omitempty"`
@@ -64,8 +73,9 @@ type GeneralOpenAIRequest struct {
 	Size    string  `json:"size,omitempty"`
 	Style   *string `json:"style,omitempty"`
 	// Others
-	Instruction string `json:"instruction,omitempty"`
-	NumCtx      int    `json:"num_ctx,omitempty"`
+	Instruction string    `json:"instruction,omitempty"`
+	NumCtx      int       `json:"num_ctx,omitempty"`
+	Provider    *Provider `json:"provider,omitempty"`
 }
 
 func (r GeneralOpenAIRequest) ParseInput() []string {

@@ -35,7 +35,7 @@ func RelayTextHelper(c *gin.Context) *model.ErrorWithStatusCode {
 
 	// map model name
 	meta.OriginModelName = textRequest.Model
-	textRequest.Model, _ = getMappedModelName(textRequest.Model, meta.ModelMapping)
+	textRequest.Model, _, textRequest.Provider = getMappedModelName(textRequest.Model, meta.ModelMapping)
 	meta.ActualModelName = textRequest.Model
 	// set system prompt if not empty
 	systemPromptReset := setSystemPrompt(ctx, textRequest, meta.ForcedSystemPrompt)

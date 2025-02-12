@@ -140,15 +140,23 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 	model.UpdateChannelUsedQuota(meta.ChannelId, quota)
 }
 
-func getMappedModelName(modelName string, mapping map[string]string) (string, bool) {
+func getMappedModelName(modelName string, mapping map[string]string) (string, bool, *relaymodel.Provider) {
 	if mapping == nil {
-		return modelName, false
+		return modelName, false, nil
 	}
 	mappedModelName := mapping[modelName]
 	if mappedModelName != "" {
-		return mappedModelName, true
+		if idx := strings.Index(mappedModelName, "@"); idx != -1 {
+			suffix := mappedModelName[idx+1:]
+			mappedModelName = mappedModelName[:idx]
+			return mappedModelName, true, &relaymodel.Provider{
+				Order:          strings.Split(suffix, ","),
+				AllowFallbacks: false,
+			}
+		}
+		return mappedModelName, true, nil
 	}
-	return modelName, false
+	return modelName, false, nil
 }
 
 func isErrorHappened(meta *meta.Meta, resp *http.Response) bool {
