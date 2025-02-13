@@ -73,9 +73,10 @@ type GeneralOpenAIRequest struct {
 	Size    string  `json:"size,omitempty"`
 	Style   *string `json:"style,omitempty"`
 	// Others
-	Instruction string    `json:"instruction,omitempty"`
-	NumCtx      int       `json:"num_ctx,omitempty"`
-	Provider    *Provider `json:"provider,omitempty"`
+	Instruction      string    `json:"instruction,omitempty"`
+	NumCtx           int       `json:"num_ctx,omitempty"`
+	Provider         *Provider `json:"provider,omitempty"`
+	IncludeReasoning *bool     `json:"include_reasoning,omitempty"`
 }
 
 func (r GeneralOpenAIRequest) ParseInput() []string {
