@@ -43,6 +43,14 @@ func RelayTextHelper(c *gin.Context) *model.ErrorWithStatusCode {
 	modelRatio := billingratio.GetModelRatio(textRequest.Model, meta.ChannelType)
 	groupRatio := billingratio.GetGroupRatio(meta.Group)
 	ratio := modelRatio * groupRatio
+	// fix o3-mini temperature
+	if meta.ActualModelName == "o3-mini" {
+		textRequest.Temperature = nil
+		if meta.OriginModelName == "o3-mini-high" {
+			highEffort := "high"
+			textRequest.ReasoningEffort = &highEffort
+		}
+	}
 	// pre-consume quota
 	promptTokens := getPromptTokens(textRequest, meta.Mode)
 	meta.PromptTokens = promptTokens
@@ -91,6 +99,7 @@ func getRequestBody(c *gin.Context, meta *meta.Meta, textRequest *model.GeneralO
 	if !config.EnforceIncludeUsage &&
 		meta.APIType == apitype.OpenAI &&
 		meta.OriginModelName == meta.ActualModelName &&
+		meta.ActualModelName != "o3-mini" &&
 		meta.ChannelType != channeltype.Baichuan &&
 		meta.ForcedSystemPrompt == "" {
 		// no need to convert request for openai
