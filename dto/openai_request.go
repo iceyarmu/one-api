@@ -17,6 +17,15 @@ type FormatJsonSchema struct {
 	Strict      any    `json:"strict,omitempty"`
 }
 
+type Provider struct {
+	Order          []string `json:"order,omitempty"`
+	Ignore         []string `json:"ignore,omitempty"`
+	AllowFallbacks bool     `json:"allow_fallbacks,omitempty"`
+	Sort           string   `json:"sort,omitempty"`
+	DataCollection string   `json:"data_collection,omitempty"`
+	Quantizations  []string `json:"quantizations,omitempty"`
+}
+
 type GeneralOpenAIRequest struct {
 	Model               string            `json:"model,omitempty"`
 	Messages            []Message         `json:"messages,omitempty"`
@@ -51,6 +60,8 @@ type GeneralOpenAIRequest struct {
 	Modalities          any               `json:"modalities,omitempty"`
 	Audio               any               `json:"audio,omitempty"`
 	ExtraBody           any               `json:"extra_body,omitempty"`
+	Provider            *Provider         `json:"provider,omitempty"`
+	IncludeReasoning    *bool             `json:"include_reasoning,omitempty"`
 }
 
 type ToolCallRequest struct {

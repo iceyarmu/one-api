@@ -94,6 +94,14 @@ func TextHelper(c *gin.Context) (openaiErr *dto.OpenAIErrorWithStatusCode) {
 
 	textRequest.Model = relayInfo.UpstreamModelName
 
+	// 发送OpenRouter的Provider
+	if len(relayInfo.ProviderOrder) > 0 {
+		textRequest.Provider = &dto.Provider{
+			Order:          relayInfo.ProviderOrder,
+			AllowFallbacks: false,
+		}
+	}
+
 	// 获取 promptTokens，如果上下文中已经存在，则直接使用
 	var promptTokens int
 	if value, exists := c.Get("prompt_tokens"); exists {

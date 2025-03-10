@@ -59,6 +59,7 @@ type RelayInfo struct {
 	UserEmail            string
 	UserQuota            int
 	ThinkingContentInfo
+	ProviderOrder []string
 }
 
 // 定义支持流式选项的通道类型
