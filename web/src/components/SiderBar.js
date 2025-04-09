@@ -33,12 +33,12 @@ import { setStatusData } from '../helpers/data.js';
 import { stringToColor } from '../helpers/render.js';
 import { useSetTheme, useTheme } from '../context/Theme/index.js';
 import { StyleContext } from '../context/Style/index.js';
+import Text from '@douyinfe/semi-ui/lib/es/typography/text';
 
 // 自定义侧边栏按钮样式
 const navItemStyle = {
   borderRadius: '6px',
   margin: '4px 8px',
-  transition: 'all 0.3s ease'
 };
 
 // 自定义侧边栏按钮悬停样式
@@ -59,8 +59,26 @@ const iconStyle = (itemKey, selectedKeys) => {
   return {
     fontSize: '18px',
     color: selectedKeys.includes(itemKey) ? 'var(--semi-color-primary)' : 'var(--semi-color-text-2)',
-    transition: 'all 0.3s ease'
   };
+};
+
+// Define routerMap as a constant outside the component
+const routerMap = {
+  home: '/',
+  channel: '/channel',
+  token: '/token',
+  redemption: '/redemption',
+  topup: '/topup',
+  user: '/user',
+  log: '/log',
+  midjourney: '/midjourney',
+  setting: '/setting',
+  about: '/about',
+  detail: '/detail',
+  pricing: '/pricing',
+  task: '/task',
+  playground: '/playground',
+  personal: '/personal',
 };
 
 const SiderBar = () => {
@@ -77,10 +95,11 @@ const SiderBar = () => {
   const theme = useTheme();
   const setTheme = useSetTheme();
   const location = useLocation();
+  const [routerMapState, setRouterMapState] = useState(routerMap);
 
   // 预先计算所有可能的图标样式
   const allItemKeys = useMemo(() => {
-    const keys = ['home', 'channel', 'token', 'redemption', 'topup', 'user', 'log', 'midjourney', 
+    const keys = ['home', 'channel', 'token', 'redemption', 'topup', 'user', 'log', 'midjourney',
                  'setting', 'about', 'chat', 'detail', 'pricing', 'task', 'playground', 'personal'];
     // 添加聊天项的keys
     for (let i = 0; i < chatItems.length; i++) {
@@ -97,25 +116,6 @@ const SiderBar = () => {
     });
     return styles;
   }, [allItemKeys, selectedKeys]);
-
-  const routerMap = {
-    home: '/',
-    channel: '/channel',
-    token: '/token',
-    redemption: '/redemption',
-    topup: '/topup',
-    user: '/user',
-    log: '/log',
-    midjourney: '/midjourney',
-    setting: '/setting',
-    about: '/about',
-    chat: '/chat',
-    detail: '/detail',
-    pricing: '/pricing',
-    task: '/task',
-    playground: '/playground',
-    personal: '/personal',
-  };
 
   const workspaceItems = useMemo(
     () => [
@@ -238,19 +238,24 @@ const SiderBar = () => {
     [chatItems, t],
   );
 
-  useEffect(() => {
-    const currentPath = location.pathname;
-    const matchingKey = Object.keys(routerMap).find(key => routerMap[key] === currentPath);
+  // Function to update router map with chat routes
+  const updateRouterMapWithChats = (chats) => {
+    const newRouterMap = { ...routerMap };
     
-    if (matchingKey) {
-      setSelectedKeys([matchingKey]);
-    } else if (currentPath.startsWith('/chat/')) {
-      setSelectedKeys(['chat']);
+    if (Array.isArray(chats) && chats.length > 0) {
+      for (let i = 0; i < chats.length; i++) {
+        newRouterMap['chat' + i] = '/chat/' + i;
+      }
     }
+    
+    setRouterMapState(newRouterMap);
+    return newRouterMap;
+  };
 
+  // Update the useEffect for chat items
+  useEffect(() => {
     let chats = localStorage.getItem('chats');
     if (chats) {
-      // console.log(chats);
       try {
         chats = JSON.parse(chats);
         if (Array.isArray(chats)) {
@@ -262,19 +267,44 @@ const SiderBar = () => {
               chat.itemKey = 'chat' + i;
               chat.to = '/chat/' + i;
             }
-            // setRouterMap({ ...routerMap, chat: '/chat/' + i })
             chatItems.push(chat);
           }
           setChatItems(chatItems);
+          
+          // Update router map with chat routes
+          updateRouterMapWithChats(chats);
         }
       } catch (e) {
         console.error(e);
         showError('聊天数据解析失败')
       }
     }
+  }, []);
 
-    setIsCollapsed(localStorage.getItem('default_collapse_sidebar') === 'true');
-  }, [location.pathname]);
+  // Update the useEffect for route selection
+  useEffect(() => {
+    const currentPath = location.pathname;
+    let matchingKey = Object.keys(routerMapState).find(key => routerMapState[key] === currentPath);
+
+    // Handle chat routes
+    if (!matchingKey && currentPath.startsWith('/chat/')) {
+      const chatIndex = currentPath.split('/').pop();
+      if (!isNaN(chatIndex)) {
+        matchingKey = 'chat' + chatIndex;
+      } else {
+        matchingKey = 'chat';
+      }
+    }
+
+    // If we found a matching key, update the selected keys
+    if (matchingKey) {
+      setSelectedKeys([matchingKey]);
+    }
+  }, [location.pathname, routerMapState]);
+
+  useEffect(() => {
+    setIsCollapsed(styleState.siderCollapsed);
+  }, [styleState.siderCollapsed]);
 
   // Custom divider style
   const dividerStyle = {
@@ -298,14 +328,15 @@ const SiderBar = () => {
         className="custom-sidebar-nav"
         style={{ 
           width: isCollapsed ? '60px' : '200px',
-          height: '100%',
-          boxShadow: '0 1px 6px rgba(0, 0, 0, 0.08)',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
           borderRight: '1px solid var(--semi-color-border)',
-          background: 'var(--semi-color-bg-0)',
-          borderRadius: '0 8px 8px 0',
-          transition: 'all 0.3s ease',
+          background: 'var(--semi-color-bg-1)',
+          borderRadius: styleState.isMobile ? '0' : '0 8px 8px 0',
           position: 'relative',
-          zIndex: 95
+          zIndex: 95,
+          height: '100%',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch', // Improve scrolling on iOS devices
         }}
         defaultIsCollapsed={
           localStorage.getItem('default_collapse_sidebar') === 'true'
@@ -313,21 +344,21 @@ const SiderBar = () => {
         isCollapsed={isCollapsed}
         onCollapseChange={(collapsed) => {
           setIsCollapsed(collapsed);
+          // styleDispatch({ type: 'SET_SIDER', payload: true });
+          styleDispatch({ type: 'SET_SIDER_COLLAPSED', payload: collapsed });
           localStorage.setItem('default_collapse_sidebar', collapsed);
-          // 始终保持侧边栏显示，只是宽度不同
-          styleDispatch({ type: 'SET_SIDER', payload: true });
-          
+
           // 确保在收起侧边栏时有选中的项目，避免不必要的计算
           if (selectedKeys.length === 0) {
             const currentPath = location.pathname;
-            const matchingKey = Object.keys(routerMap).find(key => routerMap[key] === currentPath);
-            
+            const matchingKey = Object.keys(routerMapState).find(key => routerMapState[key] === currentPath);
+
             if (matchingKey) {
               setSelectedKeys([matchingKey]);
             } else if (currentPath.startsWith('/chat/')) {
               setSelectedKeys(['chat']);
             } else {
-              setSelectedKeys(['home']); // 默认选中首页
+              setSelectedKeys(['detail']); // 默认选中首页
             }
           }
         }}
@@ -336,28 +367,10 @@ const SiderBar = () => {
         hoverStyle={navItemHoverStyle}
         selectedStyle={navItemSelectedStyle}
         renderWrapper={({ itemElement, isSubNav, isInSubNav, props }) => {
-          let chats = localStorage.getItem('chats');
-          if (chats) {
-            chats = JSON.parse(chats);
-            if (Array.isArray(chats) && chats.length > 0) {
-              for (let i = 0; i < chats.length; i++) {
-                routerMap['chat' + i] = '/chat/' + i;
-              }
-              if (chats.length > 1) {
-                // delete /chat
-                if (routerMap['chat']) {
-                  delete routerMap['chat'];
-                }
-              } else {
-                // rename /chat to /chat/0
-                routerMap['chat'] = '/chat/0';
-              }
-            }
-          }
           return (
             <Link
               style={{ textDecoration: 'none' }}
-              to={routerMap[props.itemKey]}
+              to={routerMapState[props.itemKey] || routerMap[props.itemKey]}
             >
               {itemElement}
             </Link>
@@ -417,7 +430,7 @@ const SiderBar = () => {
         <Divider style={dividerStyle} />
 
         {/* Workspace Section */}
-        {!isCollapsed && <div style={groupLabelStyle}>{t('控制台')}</div>}
+        {!isCollapsed && <Text style={groupLabelStyle}>{t('控制台')}</Text>}
         {workspaceItems.map((item) => (
           <Nav.Item
             key={item.itemKey}
@@ -434,7 +447,7 @@ const SiderBar = () => {
             <Divider style={dividerStyle} />
 
             {/* Admin Section */}
-            {!isCollapsed && <div style={groupLabelStyle}>{t('管理员')}</div>}
+            {!isCollapsed && <Text style={groupLabelStyle}>{t('管理员')}</Text>}
             {adminItems.map((item) => (
               <Nav.Item
                 key={item.itemKey}
@@ -451,7 +464,7 @@ const SiderBar = () => {
         <Divider style={dividerStyle} />
 
         {/* Finance Management Section */}
-        {!isCollapsed && <div style={groupLabelStyle}>{t('个人中心')}</div>}
+        {!isCollapsed && <Text style={groupLabelStyle}>{t('个人中心')}</Text>}
         {financeItems.map((item) => (
           <Nav.Item
             key={item.itemKey}
@@ -463,12 +476,10 @@ const SiderBar = () => {
         ))}
 
         <Nav.Footer
-          collapseButton={true}
           style={{
-            borderTop: '1px solid var(--semi-color-border)',
-            padding: '12px 0',
-            marginTop: 'auto'
+            paddingBottom: styleState?.isMobile ? '112px' : '',
           }}
+          collapseButton={true}
           collapseText={(collapsed)=>
             {
               if(collapsed){

@@ -71,12 +71,17 @@ const PageLayout = () => {
   const isSidebarCollapsed = localStorage.getItem('default_collapse_sidebar') === 'true';
 
   return (
-    <Layout style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <Layout style={{ 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      overflow: styleState.isMobile ? 'visible' : 'hidden'
+    }}>
       <Header style={{ 
         padding: 0, 
         height: 'auto', 
         lineHeight: 'normal', 
-        position: 'fixed', 
+        position: styleState.isMobile ? 'sticky' : 'fixed',
         width: '100%', 
         top: 0, 
         zIndex: 100,
@@ -84,39 +89,51 @@ const PageLayout = () => {
       }}>
         <HeaderBar />
       </Header>
-      <Layout style={{ marginTop: '56px', height: 'calc(100vh - 56px)', overflow: 'hidden' }}>
+      <Layout style={{ 
+        marginTop: styleState.isMobile ? '0' : '56px',
+        height: styleState.isMobile ? 'auto' : 'calc(100vh - 56px)',
+        overflow: styleState.isMobile ? 'visible' : 'auto',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
         {styleState.showSider && (
-          <Sider style={{ 
-            height: 'calc(100vh - 56px)', 
+          <Sider style={{
             position: 'fixed',
             left: 0,
             top: '56px',
-            zIndex: 90,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            width: 'auto',
-            background: 'transparent',
-            boxShadow: 'none',
+            zIndex: 99,
+            background: 'var(--semi-color-bg-1)',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
             border: 'none',
-            paddingRight: '5px'
+            paddingRight: '0',
+            height: 'calc(100vh - 56px)',
           }}>
             <SiderBar />
           </Sider>
         )}
         <Layout style={{ 
-          marginLeft: styleState.showSider ? (isSidebarCollapsed ? '60px' : '200px') : '0', 
-          transition: 'margin-left 0.3s ease'
+          marginLeft: styleState.isMobile ? '0' : (styleState.showSider ? (styleState.siderCollapsed ? '60px' : '200px') : '0'),
+          transition: 'margin-left 0.3s ease',
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column'
         }}>
           <Content
             style={{ 
-              height: '100%',
-              overflowY: 'auto', 
-              padding: styleState.shouldInnerPadding? '24px': '0' 
+              flex: '1 0 auto',
+              overflowY: styleState.isMobile ? 'visible' : 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: styleState.shouldInnerPadding? '24px': '0',
+              position: 'relative',
+              marginTop: styleState.isMobile ? '2px' : '0',
             }}
           >
             <App />
           </Content>
-          <Layout.Footer>
+          <Layout.Footer style={{ 
+            flex: '0 0 auto',
+            width: '100%'
+          }}>
             <FooterBar />
           </Layout.Footer>
         </Layout>
