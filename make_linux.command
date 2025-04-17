@@ -1,4 +1,6 @@
 #!/bin/sh
+currentShellPath=$(cd "$(dirname "$0")"; pwd)
+cd "$currentShellPath"
 rm -f one-api
 
 docker run --rm --platform=linux/amd64 -v "$(pwd):/src" -w /src \
