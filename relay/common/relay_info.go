@@ -103,6 +103,7 @@ type RelayInfo struct {
 	*ClaudeConvertInfo
 	*RerankerInfo
 	*ResponsesUsageInfo
+	ProviderOrder []string
 }
 
 // 定义支持流式选项的通道类型

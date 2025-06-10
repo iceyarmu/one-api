@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"one-api/relay/common"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,6 +48,12 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo) error {
 			}
 		}
 		if info.IsModelMapped {
+			// 提取Provider
+			if idx := strings.Index(currentModel, "@"); idx != -1 {
+				suffix := currentModel[idx+1:]
+				currentModel = currentModel[:idx]
+				info.ProviderOrder = strings.Split(suffix, ",")
+			}
 			info.UpstreamModelName = currentModel
 		}
 	}

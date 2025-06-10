@@ -65,7 +65,9 @@ type GeneralOpenAIRequest struct {
 	ExtraBody           json.RawMessage   `json:"extra_body,omitempty"`
 	WebSearchOptions    *WebSearchOptions `json:"web_search_options,omitempty"`
 	// OpenRouter Params
-	Reasoning json.RawMessage `json:"reasoning,omitempty"`
+	Reasoning        json.RawMessage `json:"reasoning,omitempty"`
+	Provider         *Provider       `json:"provider,omitempty"`
+	IncludeReasoning *bool           `json:"include_reasoning,omitempty"`
 }
 
 func (r *GeneralOpenAIRequest) ToMap() map[string]any {
