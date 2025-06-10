@@ -120,11 +120,12 @@ func getImageToken(info *relaycommon.RelayInfo, imageUrl *dto.MessageImageUrl, m
 	var config image.Config
 	var err error
 	var format string
+	var b64str string
 	if strings.HasPrefix(imageUrl.Url, "http") {
 		config, format, err = DecodeUrlImageData(imageUrl.Url)
 	} else {
 		common.SysLog(fmt.Sprintf("decoding image"))
-		config, format, _, err = DecodeBase64ImageData(imageUrl.Url)
+		config, format, b64str, err = DecodeBase64ImageData(imageUrl.Url)
 	}
 	if err != nil {
 		return 0, err
@@ -132,7 +133,12 @@ func getImageToken(info *relaycommon.RelayInfo, imageUrl *dto.MessageImageUrl, m
 	imageUrl.MimeType = format
 
 	if config.Width == 0 || config.Height == 0 {
-		return 0, errors.New(fmt.Sprintf("fail to decode image config: %s", imageUrl.Url))
+		// not an image
+		if format != "" && b64str != "" {
+			// file type
+			return 3 * baseTokens, nil
+		}
+		return 0, errors.New(fmt.Sprintf("fail to decode base64 config: %s", imageUrl.Url))
 	}
 
 	shortSide := config.Width
@@ -255,12 +261,16 @@ func CountTokenClaudeMessages(messages []dto.ClaudeMessage, model string, stream
 					//}
 					tokenNum += 1000
 				case "tool_use":
-					tokenNum += getTokenNum(tokenEncoder, mediaMessage.Name)
-					inputJSON, _ := json.Marshal(mediaMessage.Input)
-					tokenNum += getTokenNum(tokenEncoder, string(inputJSON))
+					if mediaMessage.Input != nil {
+						tokenNum += getTokenNum(tokenEncoder, mediaMessage.Name)
+						inputJSON, _ := json.Marshal(mediaMessage.Input)
+						tokenNum += getTokenNum(tokenEncoder, string(inputJSON))
+					}
 				case "tool_result":
-					contentJSON, _ := json.Marshal(mediaMessage.Content)
-					tokenNum += getTokenNum(tokenEncoder, string(contentJSON))
+					if mediaMessage.Content != nil {
+						contentJSON, _ := json.Marshal(mediaMessage.Content)
+						tokenNum += getTokenNum(tokenEncoder, string(contentJSON))
+					}
 				}
 			}
 		}
@@ -380,7 +390,7 @@ func CountTokenMessages(info *relaycommon.RelayInfo, messages []dto.Message, mod
 	for _, message := range messages {
 		tokenNum += tokensPerMessage
 		tokenNum += getTokenNum(tokenEncoder, message.Role)
-		if len(message.Content) > 0 {
+		if message.Content != nil {
 			if message.Name != nil {
 				tokenNum += tokensPerName
 				tokenNum += getTokenNum(tokenEncoder, *message.Name)
@@ -399,6 +409,8 @@ func CountTokenMessages(info *relaycommon.RelayInfo, messages []dto.Message, mod
 					// TODO: 音频token数量计算
 					tokenNum += 100
 				} else if m.Type == dto.ContentTypeFile {
+					tokenNum += 5000
+				} else if m.Type == dto.ContentTypeVideoUrl {
 					tokenNum += 5000
 				} else {
 					tokenNum += getTokenNum(tokenEncoder, m.Text)

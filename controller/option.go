@@ -110,7 +110,24 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
-
+	case "ModelRequestRateLimitGroup":
+		err = setting.CheckModelRequestRateLimitGroup(option.Value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "ApiInfo":
+		err = setting.ValidateApiInfo(option.Value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	}
 	err = model.UpdateOption(option.Key, option.Value)
 	if err != nil {
