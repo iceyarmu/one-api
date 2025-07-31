@@ -3,6 +3,11 @@ currentShellPath=$(cd "$(dirname "$0")"; pwd)
 cd "$currentShellPath"
 rm -f one-api
 
+cd web
+bun install
+bun run build
+cd ..
+
 docker run --rm --platform=linux/amd64 -v "$(pwd):/src" -w /src \
     -e HTTP_PROXY="http://host.docker.internal:1087" \
     -e HTTPS_PROXY="http://host.docker.internal:1087" \
