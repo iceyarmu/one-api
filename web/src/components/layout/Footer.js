@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import React, { useEffect, useState, useMemo, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@douyinfe/semi-ui';
@@ -22,7 +41,7 @@ const FooterBar = () => {
   const currentYear = new Date().getFullYear();
 
   const customFooter = useMemo(() => (
-    <footer className="relative bg-semi-color-bg-2 h-auto py-16 px-6 md:px-24 w-full flex flex-col items-center justify-between overflow-hidden">
+    <footer className="relative h-auto py-16 px-6 md:px-24 w-full flex flex-col items-center justify-between overflow-hidden">
       <div className="absolute hidden md:block top-[204px] left-[-100px] w-[151px] h-[151px] rounded-full bg-[#FFD166]"></div>
       <div className="absolute md:hidden bottom-[20px] left-[-50px] w-[80px] h-[80px] rounded-full bg-[#FFD166] opacity-60"></div>
 

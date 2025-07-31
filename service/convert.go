@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"one-api/common"
+	"one-api/constant"
 	"one-api/dto"
 	"one-api/relay/channel/openrouter"
 	relaycommon "one-api/relay/common"
@@ -19,12 +20,12 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 		Stream:      claudeRequest.Stream,
 	}
 
-	isOpenRouter := info.ChannelType == common.ChannelTypeOpenRouter
+	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
 
-	if claudeRequest.Thinking != nil {
+	if claudeRequest.Thinking != nil && claudeRequest.Thinking.Type == "enabled" {
 		if isOpenRouter {
 			reasoning := openrouter.RequestReasoning{
-				MaxTokens: claudeRequest.Thinking.BudgetTokens,
+				MaxTokens: claudeRequest.Thinking.GetBudgetTokens(),
 			}
 			reasoningJSON, err := json.Marshal(reasoning)
 			if err != nil {
@@ -162,7 +163,7 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 						oaiToolMessage.SetStringContent(mediaMsg.GetStringContent())
 					} else {
 						mediaContents := mediaMsg.ParseMediaContent()
-						encodeJson, _ := common.EncodeJson(mediaContents)
+						encodeJson, _ := common.Marshal(mediaContents)
 						oaiToolMessage.SetStringContent(string(encodeJson))
 					}
 					openAIMessages = append(openAIMessages, oaiToolMessage)
@@ -250,22 +251,54 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 			resp.SetIndex(0)
 			claudeResponses = append(claudeResponses, resp)
 		} else {
-			//resp := &dto.ClaudeResponse{
-			//	Type: "content_block_start",
-			//	ContentBlock: &dto.ClaudeMediaMessage{
-			//		Type: "text",
-			//		Text: common.GetPointer[string](""),
-			//	},
-			//}
-			//resp.SetIndex(0)
-			//claudeResponses = append(claudeResponses, resp)
+
+		}
+		// 判断首个响应是否存在内容（非标准的 OpenAI 响应）
+		if len(openAIResponse.Choices) > 0 && len(openAIResponse.Choices[0].Delta.GetContentString()) > 0 {
+			claudeResponses = append(claudeResponses, &dto.ClaudeResponse{
+				Index: &info.ClaudeConvertInfo.Index,
+				Type:  "content_block_start",
+				ContentBlock: &dto.ClaudeMediaMessage{
+					Type: "text",
+					Text: common.GetPointer[string](""),
+				},
+			})
+			claudeResponses = append(claudeResponses, &dto.ClaudeResponse{
+				Type: "content_block_delta",
+				Delta: &dto.ClaudeMediaMessage{
+					Type: "text",
+					Text: common.GetPointer[string](openAIResponse.Choices[0].Delta.GetContentString()),
+				},
+			})
+			info.ClaudeConvertInfo.LastMessagesType = relaycommon.LastMessageTypeText
 		}
 		return claudeResponses
 	}
 
 	if len(openAIResponse.Choices) == 0 {
 		// no choices
-		// TODO: handle this case
+		// 可能为非标准的 OpenAI 响应，判断是否已经完成
+		if info.Done {
+			claudeResponses = append(claudeResponses, generateStopBlock(info.ClaudeConvertInfo.Index))
+			oaiUsage := info.ClaudeConvertInfo.Usage
+			if oaiUsage != nil {
+				claudeResponses = append(claudeResponses, &dto.ClaudeResponse{
+					Type: "message_delta",
+					Usage: &dto.ClaudeUsage{
+						InputTokens:              oaiUsage.PromptTokens,
+						OutputTokens:             oaiUsage.CompletionTokens,
+						CacheCreationInputTokens: oaiUsage.PromptTokensDetails.CachedCreationTokens,
+						CacheReadInputTokens:     oaiUsage.PromptTokensDetails.CachedTokens,
+					},
+					Delta: &dto.ClaudeMediaMessage{
+						StopReason: common.GetPointer[string](stopReasonOpenAI2Claude(info.FinishReason)),
+					},
+				})
+			}
+			claudeResponses = append(claudeResponses, &dto.ClaudeResponse{
+				Type: "message_stop",
+			})
+		}
 		return claudeResponses
 	} else {
 		chosenChoice := openAIResponse.Choices[0]
@@ -276,12 +309,15 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 		}
 		if info.Done {
 			claudeResponses = append(claudeResponses, generateStopBlock(info.ClaudeConvertInfo.Index))
-			if info.ClaudeConvertInfo.Usage != nil {
+			oaiUsage := info.ClaudeConvertInfo.Usage
+			if oaiUsage != nil {
 				claudeResponses = append(claudeResponses, &dto.ClaudeResponse{
 					Type: "message_delta",
 					Usage: &dto.ClaudeUsage{
-						InputTokens:  info.ClaudeConvertInfo.Usage.PromptTokens,
-						OutputTokens: info.ClaudeConvertInfo.Usage.CompletionTokens,
+						InputTokens:              oaiUsage.PromptTokens,
+						OutputTokens:             oaiUsage.CompletionTokens,
+						CacheCreationInputTokens: oaiUsage.PromptTokensDetails.CachedCreationTokens,
+						CacheReadInputTokens:     oaiUsage.PromptTokensDetails.CachedTokens,
 					},
 					Delta: &dto.ClaudeMediaMessage{
 						StopReason: common.GetPointer[string](stopReasonOpenAI2Claude(info.FinishReason)),

@@ -1,6 +1,26 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import i18next from 'i18next';
 import { Modal, Tag, Typography } from '@douyinfe/semi-ui';
-import { copy, isMobile, showSuccess } from './utils';
+import { copy, showSuccess } from './utils';
+import { MOBILE_BREAKPOINT } from '../hooks/common/useIsMobile.js';
 import { visit } from 'unist-util-visit';
 import {
   OpenAI,
@@ -30,7 +50,9 @@ import {
   Dify,
   Coze,
   SiliconCloud,
-  FastGPT
+  FastGPT,
+  Kling,
+  Jimeng,
 } from '@lobehub/icons';
 
 import {
@@ -47,23 +69,22 @@ import {
   User,
   Settings,
   CircleUser,
-  Users
 } from 'lucide-react';
 
 // 侧边栏图标颜色映射
 export const sidebarIconColors = {
-  dashboard: '#4F46E5', // 紫蓝色
+  dashboard: '#10B981', // 绿色
   terminal: '#10B981', // 绿色
   message: '#06B6D4', // 青色
   key: '#3B82F6', // 蓝色
-  chart: '#8B5CF6', // 紫色
+  chart: '#F59E0B', // 琥珀色
   image: '#EC4899', // 粉色
   check: '#F59E0B', // 琥珀色
   credit: '#F97316', // 橙色
   layers: '#EF4444', // 红色
   gift: '#F43F5E', // 玫红色
-  user: '#6366F1', // 靛蓝色
-  settings: '#6B7280', // 灰色
+  user: '#10B981', // 绿色
+  settings: '#F97316', // 橙色
 };
 
 // 获取侧边栏Lucide图标组件
@@ -316,7 +337,6 @@ export const getModelCategories = (() => {
   };
 })();
 
-
 /**
  * 根据渠道类型返回对应的厂商图标
  * @param {number} channelType - 渠道类型值
@@ -388,6 +408,10 @@ export function getChannelIcon(channelType) {
       return <XAI size={iconSize} />;
     case 49: // Coze
       return <Coze size={iconSize} />;
+    case 50: // 可灵 Kling
+      return <Kling.Color size={iconSize} />;
+    case 51: // 即梦 Jimeng
+      return <Jimeng.Color size={iconSize} />;
     case 8: // 自定义渠道
     case 22: // 知识库：FastGPT
       return <FastGPT.Color size={iconSize} />;
@@ -535,7 +559,7 @@ export function stringToColor(str) {
 export function renderModelTag(modelName, options = {}) {
   const {
     color,
-    size = 'large',
+    size = 'default',
     shape = 'circle',
     onClick,
     suffixIcon,
@@ -580,7 +604,7 @@ export function renderText(text, limit) {
 export function renderGroup(group) {
   if (group === '') {
     return (
-      <Tag size='large' key='default' color='orange' shape='circle'>
+      <Tag key='default' color='white' shape='circle'>
         {i18next.t('用户分组')}
       </Tag>
     );
@@ -599,7 +623,6 @@ export function renderGroup(group) {
     <span key={group}>
       {groups.map((group) => (
         <Tag
-          size='large'
           color={tagColors[group] || stringToColor(group)}
           key={group}
           shape='circle'
@@ -666,7 +689,8 @@ const measureTextWidth = (
 };
 
 export function truncateText(text, maxWidth = 200) {
-  if (!isMobile()) {
+  const isMobileScreen = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`).matches;
+  if (!isMobileScreen) {
     return text;
   }
   if (!text) return text;
@@ -859,14 +883,48 @@ export function renderQuotaWithAmount(amount) {
 }
 
 export function renderQuota(quota, digits = 2) {
+
   let quotaPerUnit = localStorage.getItem('quota_per_unit');
   let displayInCurrency = localStorage.getItem('display_in_currency');
   quotaPerUnit = parseFloat(quotaPerUnit);
   displayInCurrency = displayInCurrency === 'true';
   if (displayInCurrency) {
-    return '$' + (quota / quotaPerUnit).toFixed(digits);
+    const result = quota / quotaPerUnit;
+    const fixedResult = result.toFixed(digits);
+    
+    // 如果 toFixed 后结果为 0 但原始值不为 0，显示最小值
+    if (parseFloat(fixedResult) === 0 && quota > 0 && result > 0) {
+      const minValue = Math.pow(10, -digits);
+      return '$' + minValue.toFixed(digits);
+    }
+    
+    return '$' + fixedResult;
   }
   return renderNumber(quota);
+}
+
+function isValidGroupRatio(ratio) {
+  return Number.isFinite(ratio) && ratio !== -1;
+}
+
+/**
+ * Helper function to get effective ratio and label
+ * @param {number} groupRatio - The default group ratio
+ * @param {number} user_group_ratio - The user-specific group ratio  
+ * @returns {Object} - Object containing { ratio, label, useUserGroupRatio }
+ */
+function getEffectiveRatio(groupRatio, user_group_ratio) {
+  const useUserGroupRatio = isValidGroupRatio(user_group_ratio);
+  const ratioLabel = useUserGroupRatio
+    ? i18next.t('专属倍率')
+    : i18next.t('分组倍率');
+  const effectiveRatio = useUserGroupRatio ? user_group_ratio : groupRatio;
+
+  return {
+    ratio: effectiveRatio,
+    label: ratioLabel,
+    useUserGroupRatio: useUserGroupRatio
+  };
 }
 
 export function renderModelPrice(
@@ -876,6 +934,7 @@ export function renderModelPrice(
   modelPrice = -1,
   completionRatio,
   groupRatio,
+  user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,
   image = false,
@@ -891,13 +950,17 @@ export function renderModelPrice(
   audioInputTokens = 0,
   audioInputPrice = 0,
 ) {
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
+
   if (modelPrice !== -1) {
     return i18next.t(
-      '模型价格：${{price}} * 分组倍率：{{ratio}} = ${{total}}',
+      '模型价格：${{price}} * {{ratioType}}：{{ratio}} = ${{total}}',
       {
         price: modelPrice,
         ratio: groupRatio,
         total: modelPrice * groupRatio,
+        ratioType: ratioLabel,
       },
     );
   } else {
@@ -1034,11 +1097,12 @@ export function renderModelPrice(
 
               // 构建输出部分描述
               const outputDesc = i18next.t(
-                '输出 {{completion}} tokens / 1M tokens * ${{compPrice}}) * 分组倍率 {{ratio}}',
+                '输出 {{completion}} tokens / 1M tokens * ${{compPrice}}) * {{ratioType}} {{ratio}}',
                 {
                   completion: completionTokens,
                   compPrice: completionRatioPrice,
                   ratio: groupRatio,
+                  ratioType: ratioLabel,
                 },
               );
 
@@ -1046,21 +1110,23 @@ export function renderModelPrice(
               const extraServices = [
                 webSearch && webSearchCallCount > 0
                   ? i18next.t(
-                    ' + Web搜索 {{count}}次 / 1K 次 * ${{price}} * 分组倍率 {{ratio}}',
+                    ' + Web搜索 {{count}}次 / 1K 次 * ${{price}} * {{ratioType}} {{ratio}}',
                     {
                       count: webSearchCallCount,
                       price: webSearchPrice,
                       ratio: groupRatio,
+                      ratioType: ratioLabel,
                     },
                   )
                   : '',
                 fileSearch && fileSearchCallCount > 0
                   ? i18next.t(
-                    ' + 文件搜索 {{count}}次 / 1K 次 * ${{price}} * 分组倍率 {{ratio}}',
+                    ' + 文件搜索 {{count}}次 / 1K 次 * ${{price}} * {{ratioType}} {{ratio}}',
                     {
                       count: fileSearchCallCount,
                       price: fileSearchPrice,
                       ratio: groupRatio,
+                      ratioType: ratioLabel,
                     },
                   )
                   : '',
@@ -1092,16 +1158,12 @@ export function renderLogContent(
   user_group_ratio,
   image = false,
   imageRatio = 1.0,
-  useUserGroupRatio = undefined,
   webSearch = false,
   webSearchCallCount = 0,
   fileSearch = false,
   fileSearchCallCount = 0,
 ) {
-  const ratioLabel = useUserGroupRatio
-    ? i18next.t('专属倍率')
-    : i18next.t('分组倍率');
-  const ratio = useUserGroupRatio ? user_group_ratio : groupRatio;
+  const { ratio, label: ratioLabel, useUserGroupRatio: useUserGroupRatio } = getEffectiveRatio(groupRatio, user_group_ratio);
 
   if (modelPrice !== -1) {
     return i18next.t('模型价格 ${{price}}，{{ratioType}} {{ratio}}', {
@@ -1150,14 +1212,18 @@ export function renderModelPriceSimple(
   modelRatio,
   modelPrice = -1,
   groupRatio,
+  user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,
   image = false,
   imageRatio = 1.0,
 ) {
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
   if (modelPrice !== -1) {
-    return i18next.t('价格：${{price}} * 分组：{{ratio}}', {
+    return i18next.t('价格：${{price}} * {{ratioType}}：{{ratio}}', {
       price: modelPrice,
+      ratioType: ratioLabel,
       ratio: groupRatio,
     });
   } else {
@@ -1192,8 +1258,9 @@ export function renderModelPriceSimple(
         },
       );
     } else {
-      return i18next.t('模型: {{ratio}} * 分组: {{groupRatio}}', {
+      return i18next.t('模型: {{ratio}} * {{ratioType}}：{{groupRatio}}', {
         ratio: modelRatio,
+        ratioType: ratioLabel,
         groupRatio: groupRatio,
       });
     }
@@ -1211,17 +1278,21 @@ export function renderAudioModelPrice(
   audioRatio,
   audioCompletionRatio,
   groupRatio,
+  user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,
 ) {
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
   // 1 ratio = $0.002 / 1K tokens
   if (modelPrice !== -1) {
     return i18next.t(
-      '模型价格：${{price}} * 分组倍率：{{ratio}} = ${{total}}',
+      '模型价格：${{price}} * {{ratioType}}：{{ratio}} = ${{total}}',
       {
         price: modelPrice,
         ratio: groupRatio,
         total: modelPrice * groupRatio,
+        ratioType: ratioLabel,
       },
     );
   } else {
@@ -1362,7 +1433,7 @@ export function renderQuotaWithPrompt(quota, digits) {
   displayInCurrency = displayInCurrency === 'true';
   if (displayInCurrency) {
     return (
-      ' | ' + i18next.t('等价金额') + ': ' + renderQuota(quota, digits) + ''
+      i18next.t('等价金额：') + renderQuota(quota, digits)
     );
   }
   return '';
@@ -1375,12 +1446,14 @@ export function renderClaudeModelPrice(
   modelPrice = -1,
   completionRatio,
   groupRatio,
+  user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,
   cacheCreationTokens = 0,
   cacheCreationRatio = 1.0,
 ) {
-  const ratioLabel = false ? i18next.t('专属倍率') : i18next.t('分组倍率');
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
 
   if (modelPrice !== -1) {
     return i18next.t(
@@ -1462,7 +1535,7 @@ export function renderClaudeModelPrice(
           <p>
             {cacheTokens > 0 || cacheCreationTokens > 0
               ? i18next.t(
-                '提示 {{nonCacheInput}} tokens / 1M tokens * ${{price}} + 缓存 {{cacheInput}} tokens / 1M tokens * ${{cachePrice}} + 缓存创建 {{cacheCreationInput}} tokens / 1M tokens * ${{cacheCreationPrice}} + 补全 {{completion}} tokens / 1M tokens * ${{compPrice}} * 分组 {{ratio}} = ${{total}}',
+                '提示 {{nonCacheInput}} tokens / 1M tokens * ${{price}} + 缓存 {{cacheInput}} tokens / 1M tokens * ${{cachePrice}} + 缓存创建 {{cacheCreationInput}} tokens / 1M tokens * ${{cacheCreationPrice}} + 补全 {{completion}} tokens / 1M tokens * ${{compPrice}} * {{ratioType}} {{ratio}} = ${{total}}',
                 {
                   nonCacheInput: nonCachedTokens,
                   cacheInput: cacheTokens,
@@ -1475,17 +1548,19 @@ export function renderClaudeModelPrice(
                   completion: completionTokens,
                   compPrice: completionRatioPrice,
                   ratio: groupRatio,
+                  ratioType: ratioLabel,
                   total: price.toFixed(6),
                 },
               )
               : i18next.t(
-                '提示 {{input}} tokens / 1M tokens * ${{price}} + 补全 {{completion}} tokens / 1M tokens * ${{compPrice}} * 分组 {{ratio}} = ${{total}}',
+                '提示 {{input}} tokens / 1M tokens * ${{price}} + 补全 {{completion}} tokens / 1M tokens * ${{compPrice}} * {{ratioType}} {{ratio}} = ${{total}}',
                 {
                   input: inputTokens,
                   price: inputRatioPrice,
                   completion: completionTokens,
                   compPrice: completionRatioPrice,
                   ratio: groupRatio,
+                  ratioType: ratioLabel,
                   total: price.toFixed(6),
                 },
               )}
@@ -1502,10 +1577,12 @@ export function renderClaudeLogContent(
   completionRatio,
   modelPrice = -1,
   groupRatio,
+  user_group_ratio,
   cacheRatio = 1.0,
   cacheCreationRatio = 1.0,
 ) {
-  const ratioLabel = false ? i18next.t('专属倍率') : i18next.t('分组倍率');
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
 
   if (modelPrice !== -1) {
     return i18next.t('模型价格 ${{price}}，{{ratioType}} {{ratio}}', {
@@ -1532,12 +1609,14 @@ export function renderClaudeModelPriceSimple(
   modelRatio,
   modelPrice = -1,
   groupRatio,
+  user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,
   cacheCreationTokens = 0,
   cacheCreationRatio = 1.0,
 ) {
-  const ratioLabel = false ? i18next.t('专属倍率') : i18next.t('分组');
+  const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(groupRatio, user_group_ratio);
+  groupRatio = effectiveGroupRatio;
 
   if (modelPrice !== -1) {
     return i18next.t('价格：${{price}} * {{ratioType}}：{{ratio}}', {
