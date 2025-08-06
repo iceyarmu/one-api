@@ -184,8 +184,8 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	if simpleResponse.Error != nil && simpleResponse.Error.Type != "" {
-		return nil, types.WithOpenAIError(*simpleResponse.Error, resp.StatusCode)
+	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
 	forceFormat := false
@@ -223,6 +223,13 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 		responseBody = claudeRespStr
+	case relaycommon.RelayFormatGemini:
+		geminiResp := service.ResponseOpenAI2Gemini(&simpleResponse, info)
+		geminiRespStr, err := common.Marshal(geminiResp)
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+		responseBody = geminiRespStr
 	}
 
 	common.IOCopyBytesGracefully(c, resp, responseBody)
