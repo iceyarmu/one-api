@@ -7,6 +7,7 @@ import (
 	"one-api/common"
 	"one-api/constant"
 	"one-api/setting"
+	"one-api/setting/ratio_setting"
 	"sort"
 	"strings"
 	"sync"
@@ -128,13 +129,6 @@ func CacheGetRandomSatisfiedChannel(c *gin.Context, group string, model string, 
 }
 
 func getRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
-	if strings.HasPrefix(model, "gpt-4-gizmo") {
-		model = "gpt-4-gizmo-*"
-	}
-	if strings.HasPrefix(model, "gpt-4o-gizmo") {
-		model = "gpt-4o-gizmo-*"
-	}
-
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetRandomSatisfiedChannel(group, model, retry)
@@ -142,7 +136,15 @@ func getRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
+
+	// First, try to find channels with the exact model name.
 	channels := group2model2channels[group][model]
+
+	// If no channels found, try to find channels with the normalized model name.
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channels = group2model2channels[group][normalizedModel]
+	}
 
 	if len(channels) == 0 {
 		return nil, nil
