@@ -153,9 +153,13 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 					toolCalls = append(toolCalls, toolCall)
 				case "tool_result":
 					// Add tool result as a separate message
+					toolName := mediaMsg.Name
+					if toolName == "" {
+						toolName = claudeRequest.SearchToolNameByToolCallId(mediaMsg.ToolUseId)
+					}
 					oaiToolMessage := dto.Message{
 						Role:       "tool",
-						Name:       &mediaMsg.Name,
+						Name:       &toolName,
 						ToolCallId: mediaMsg.ToolUseId,
 					}
 					//oaiToolMessage.SetStringContent(*mediaMsg.GetMediaContent().Text)
@@ -218,12 +222,14 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 		//	Type: "ping",
 		//})
 		if openAIResponse.IsToolCall() {
+			info.ClaudeConvertInfo.LastMessagesType = relaycommon.LastMessageTypeTools
 			resp := &dto.ClaudeResponse{
 				Type: "content_block_start",
 				ContentBlock: &dto.ClaudeMediaMessage{
-					Id:   openAIResponse.GetFirstToolCall().ID,
-					Type: "tool_use",
-					Name: openAIResponse.GetFirstToolCall().Function.Name,
+					Id:    openAIResponse.GetFirstToolCall().ID,
+					Type:  "tool_use",
+					Name:  openAIResponse.GetFirstToolCall().Function.Name,
+					Input: map[string]interface{}{},
 				},
 			}
 			resp.SetIndex(0)
@@ -401,22 +407,26 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relayco
 	}
 	for _, choice := range openAIResponse.Choices {
 		stopReason = stopReasonOpenAI2Claude(choice.FinishReason)
-		claudeContent := dto.ClaudeMediaMessage{}
 		if choice.FinishReason == "tool_calls" {
-			claudeContent.Type = "tool_use"
-			claudeContent.Id = choice.Message.ToolCallId
-			claudeContent.Name = choice.Message.ParseToolCalls()[0].Function.Name
-			var mapParams map[string]interface{}
-			if err := json.Unmarshal([]byte(choice.Message.ParseToolCalls()[0].Function.Arguments), &mapParams); err == nil {
-				claudeContent.Input = mapParams
-			} else {
-				claudeContent.Input = choice.Message.ParseToolCalls()[0].Function.Arguments
+			for _, toolUse := range choice.Message.ParseToolCalls() {
+				claudeContent := dto.ClaudeMediaMessage{}
+				claudeContent.Type = "tool_use"
+				claudeContent.Id = toolUse.ID
+				claudeContent.Name = toolUse.Function.Name
+				var mapParams map[string]interface{}
+				if err := common.Unmarshal([]byte(toolUse.Function.Arguments), &mapParams); err == nil {
+					claudeContent.Input = mapParams
+				} else {
+					claudeContent.Input = toolUse.Function.Arguments
+				}
+				contents = append(contents, claudeContent)
 			}
 		} else {
+			claudeContent := dto.ClaudeMediaMessage{}
 			claudeContent.Type = "text"
 			claudeContent.SetText(choice.Message.StringContent())
+			contents = append(contents, claudeContent)
 		}
-		contents = append(contents, claudeContent)
 	}
 	claudeResponse.Content = contents
 	claudeResponse.StopReason = stopReason
@@ -559,9 +569,9 @@ func GeminiToOpenAIRequest(geminiRequest *dto.GeminiChatRequest, info *relaycomm
 	}
 
 	// 转换工具调用
-	if len(geminiRequest.Tools) > 0 {
+	if len(geminiRequest.GetTools()) > 0 {
 		var tools []dto.ToolCallRequest
-		for _, tool := range geminiRequest.Tools {
+		for _, tool := range geminiRequest.GetTools() {
 			if tool.FunctionDeclarations != nil {
 				// 将 Gemini 的 FunctionDeclarations 转换为 OpenAI 的 ToolCallRequest
 				functionDeclarations, ok := tool.FunctionDeclarations.([]dto.FunctionRequest)

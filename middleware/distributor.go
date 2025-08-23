@@ -10,6 +10,7 @@ import (
 	"one-api/model"
 	relayconstant "one-api/relay/constant"
 	"one-api/service"
+	"one-api/setting"
 	"one-api/setting/ratio_setting"
 	"one-api/types"
 	"strconv"
@@ -78,6 +79,22 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				userGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+				// check path is /pg/chat/completions
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+					playgroundRequest := &dto.PlayGroundRequest{}
+					err = common.UnmarshalBodyReusable(c, playgroundRequest)
+					if err != nil {
+						abortWithOpenAiMessage(c, http.StatusBadRequest, "无效的请求, "+err.Error())
+						return
+					}
+					if playgroundRequest.Group != "" {
+						if !setting.GroupInUserUsableGroups(playgroundRequest.Group) && playgroundRequest.Group != userGroup {
+							abortWithOpenAiMessage(c, http.StatusForbidden, "无权访问该分组")
+							return
+						}
+						userGroup = playgroundRequest.Group
+					}
+				}
 				channel, selectGroup, err = model.CacheGetRandomSatisfiedChannel(c, userGroup, modelRequest.Model, 0)
 				if err != nil {
 					showGroup := userGroup
@@ -90,11 +107,11 @@ func Distribute() func(c *gin.Context) {
 					//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
 					//	message = "数据库一致性已被破坏，请联系管理员"
 					//}
-					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message)
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, string(types.ErrorCodeModelNotFound))
 					return
 				}
 				if channel == nil {
-					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, fmt.Sprintf("分组 %s 下模型 %s 无可用渠道（distributor）", userGroup, modelRequest.Model))
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, fmt.Sprintf("分组 %s 下模型 %s 无可用渠道（distributor）", userGroup, modelRequest.Model), string(types.ErrorCodeModelNotFound))
 					return
 				}
 			}
@@ -157,7 +174,9 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			relayMode = relayconstant.RelayModeVideoFetchByID
 			shouldSelectChannel = false
 		}
-		c.Set("relay_mode", relayMode)
+		if _, ok := c.Get("relay_mode"); !ok {
+			c.Set("relay_mode", relayMode)
+		}
 	} else if strings.HasPrefix(c.Request.URL.Path, "/v1beta/models/") || strings.HasPrefix(c.Request.URL.Path, "/v1/models/") {
 		// Gemini API 路径处理: /v1beta/models/gemini-2.0-flash:generateContent
 		relayMode := relayconstant.RelayModeGemini
@@ -227,6 +246,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelType, channel.Type)
 	common.SetContextKey(c, constant.ContextKeyChannelCreateTime, channel.CreatedTime)
 	common.SetContextKey(c, constant.ContextKeyChannelSetting, channel.GetSetting())
+	common.SetContextKey(c, constant.ContextKeyChannelOtherSetting, channel.GetOtherSettings())
 	common.SetContextKey(c, constant.ContextKeyChannelParamOverride, channel.GetParamOverride())
 	if nil != channel.OpenAIOrganization && *channel.OpenAIOrganization != "" {
 		common.SetContextKey(c, constant.ContextKeyChannelOrganization, *channel.OpenAIOrganization)
@@ -249,6 +269,8 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	// c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key))
 	common.SetContextKey(c, constant.ContextKeyChannelKey, key)
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
+
+	common.SetContextKey(c, constant.ContextKeySystemPromptOverride, false)
 
 	// TODO: api_version统一
 	switch channel.Type {

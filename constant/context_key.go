@@ -3,6 +3,9 @@ package constant
 type ContextKey string
 
 const (
+	ContextKeyTokenCountMeta ContextKey = "token_count_meta"
+	ContextKeyPromptTokens   ContextKey = "prompt_tokens"
+
 	ContextKeyOriginalModel    ContextKey = "original_model"
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
 
@@ -22,6 +25,7 @@ const (
 	ContextKeyChannelBaseUrl           ContextKey = "base_url"
 	ContextKeyChannelType              ContextKey = "channel_type"
 	ContextKeyChannelSetting           ContextKey = "channel_setting"
+	ContextKeyChannelOtherSetting      ContextKey = "channel_other_setting"
 	ContextKeyChannelParamOverride     ContextKey = "param_override"
 	ContextKeyChannelOrganization      ContextKey = "channel_organization"
 	ContextKeyChannelAutoBan           ContextKey = "auto_ban"
@@ -40,4 +44,6 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
+
+	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 )
