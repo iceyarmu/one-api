@@ -46,6 +46,7 @@ type Channel struct {
 	Tag               *string `json:"tag" gorm:"index"`
 	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -111,6 +112,10 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 		return "", 0, types.NewError(errors.New("no keys available"), types.ErrorCodeChannelNoAvailableKey)
 	}
 
+	lock := GetChannelPollingLock(channel.Id)
+	lock.Lock()
+	defer lock.Unlock()
+
 	statusList := channel.ChannelInfo.MultiKeyStatusList
 	// helper to get key status, default to enabled when missing
 	getStatus := func(idx int) int {
@@ -142,9 +147,6 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 		return keys[selectedIdx], selectedIdx, nil
 	case constant.MultiKeyModePolling:
 		// Use channel-specific lock to ensure thread-safe polling
-		lock := GetChannelPollingLock(channel.Id)
-		lock.Lock()
-		defer lock.Unlock()
 
 		channelInfo, err := CacheGetChannelInfo(channel.Id)
 		if err != nil {
@@ -244,6 +246,10 @@ func (channel *Channel) GetAutoBan() bool {
 
 func (channel *Channel) Save() error {
 	return DB.Save(channel).Error
+}
+
+func (channel *Channel) SaveWithoutKey() error {
+	return DB.Omit("key").Save(channel).Error
 }
 
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool) ([]*Channel, error) {
@@ -644,7 +650,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			channel.Status = status
 			shouldUpdateAbilities = true
 		}
-		err = channel.Save()
+		err = channel.SaveWithoutKey()
 		if err != nil {
 			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
 			return false
@@ -873,6 +879,17 @@ func (channel *Channel) GetParamOverride() map[string]interface{} {
 		}
 	}
 	return paramOverride
+}
+
+func (channel *Channel) GetHeaderOverride() map[string]interface{} {
+	headerOverride := make(map[string]interface{})
+	if channel.HeaderOverride != nil && *channel.HeaderOverride != "" {
+		err := common.Unmarshal([]byte(*channel.HeaderOverride), &headerOverride)
+		if err != nil {
+			common.SysLog(fmt.Sprintf("failed to unmarshal header override: channel_id=%d, error=%v", channel.Id, err))
+		}
+	}
+	return headerOverride
 }
 
 func GetChannelsByIds(ids []int) ([]*Channel, error) {

@@ -202,7 +202,7 @@ const PricingCardView = ({
   }
 
   return (
-    <div className="px-4">
+    <div className="px-2">
       <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
         {paginatedModels.map((model, index) => {
           const modelKey = getModelKey(model);
@@ -243,6 +243,7 @@ const PricingCardView = ({
                     {/* 复制按钮 */}
                     <Button
                       size="small"
+                      theme="outline"
                       type="tertiary"
                       icon={<IconCopy />}
                       onClick={(e) => {
