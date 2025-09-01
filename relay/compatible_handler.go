@@ -46,15 +46,15 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
 
+	includeUsage := true
+
 	// 发送OpenRouter的Provider
-	if len(relayInfo.ProviderOrder) > 0 {
-		textRequest.Provider = &dto.Provider{
-			Order:          relayInfo.ProviderOrder,
+	if len(info.ProviderOrder) > 0 {
+		request.Provider = &dto.Provider{
+			Order:          info.ProviderOrder,
 			AllowFallbacks: false,
 		}
 	}
-
-	includeUsage := false
 	// 判断用户是否需要返回使用情况
 	if request.StreamOptions != nil {
 		includeUsage = request.StreamOptions.IncludeUsage

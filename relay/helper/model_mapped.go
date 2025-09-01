@@ -8,8 +8,6 @@ import (
 	"one-api/dto"
 	"one-api/relay/common"
 	"strings"
-
-	"github.com/gin-gonic/gin"
 )
 
 func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Request) error {
