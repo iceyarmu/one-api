@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
-	"one-api/dto"
-	"one-api/relay/common"
 	"strings"
 )
 
