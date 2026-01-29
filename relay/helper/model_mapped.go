@@ -11,7 +11,6 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
-	"strings"
 )
 
 func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Request) error {
