@@ -7,7 +7,7 @@ const (
 	ChannelTypeAzure          = 3
 	ChannelTypeOllama         = 4
 	ChannelTypeMidjourneyPlus = 5
-	ChannelTypeOpenAIMax      = 6
+	ChannelTypeOpenAIResponses = 6
 	ChannelTypeOhMyGPT        = 7
 	ChannelTypeCustom         = 8
 	ChannelTypeAILS           = 9
@@ -127,7 +127,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeAzure:          "Azure",
 	ChannelTypeOllama:         "Ollama",
 	ChannelTypeMidjourneyPlus: "MidjourneyPlus",
-	ChannelTypeOpenAIMax:      "OpenAIMax",
+	ChannelTypeOpenAIResponses: "OpenAI Responses",
 	ChannelTypeOhMyGPT:        "OhMyGPT",
 	ChannelTypeCustom:         "Custom",
 	ChannelTypeAILS:           "AILS",
