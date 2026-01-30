@@ -23,6 +23,11 @@ type ChatToResponsesStreamAdapter struct {
 	toolCallArguments map[int]string // Index -> Accumulated arguments
 	outputIndex       int
 	hasTextContent    bool
+	textContentIndex  int
+
+	// Reasoning content tracking
+	hasReasoningContent   bool
+	reasoningContentIndex int
 }
 
 // NewChatToResponsesStreamAdapter creates a new stream adapter
@@ -64,20 +69,29 @@ func (a *ChatToResponsesStreamAdapter) ConvertChunk(chunk *dto.ChatCompletionsSt
 		delta := choice.Delta
 
 		// Handle role (indicates start of new message)
-		if delta.Role == "assistant" && !a.hasTextContent {
+		if delta.Role == "assistant" && !a.hasTextContent && !a.hasReasoningContent {
 			events = append(events, a.createOutputItemAddedEvent())
-			events = append(events, a.createContentPartAddedEvent())
 		}
 
-		// Handle reasoning content
-		if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
-			// For now, we'll treat reasoning content as part of the text output
-			// In a more complete implementation, you might want to handle it differently
+		// Handle reasoning content first (reasoning comes before text in output)
+		if reasoning := delta.GetReasoningContent(); reasoning != "" {
+			if !a.hasReasoningContent {
+				a.hasReasoningContent = true
+				a.reasoningContentIndex = a.contentPartIndex
+				a.contentPartIndex++
+				events = append(events, a.createReasoningContentPartAddedEvent())
+			}
+			events = append(events, a.createReasoningDeltaEvent(reasoning))
 		}
 
 		// Handle text content delta
 		if delta.Content != nil && *delta.Content != "" {
-			a.hasTextContent = true
+			if !a.hasTextContent {
+				a.hasTextContent = true
+				a.textContentIndex = a.contentPartIndex
+				a.contentPartIndex++
+				events = append(events, a.createContentPartAddedEvent())
+			}
 			events = append(events, a.createTextDeltaEvent(*delta.Content))
 		}
 
@@ -111,10 +125,20 @@ func (a *ChatToResponsesStreamAdapter) ConvertChunk(chunk *dto.ChatCompletionsSt
 
 		// Handle finish reason
 		if choice.FinishReason != nil && *choice.FinishReason != "" {
-			// Complete any pending content
+			// Complete reasoning content first (reasoning comes before text in output)
+			if a.hasReasoningContent {
+				events = append(events, a.createReasoningDoneEvent())
+				events = append(events, a.createReasoningContentPartDoneEvent())
+			}
+
+			// Complete any pending text content
 			if a.hasTextContent {
 				events = append(events, a.createTextDoneEvent())
 				events = append(events, a.createContentPartDoneEvent())
+			}
+
+			// Complete message output item if we have any content
+			if a.hasTextContent || a.hasReasoningContent {
 				events = append(events, a.createOutputItemDoneEvent())
 			}
 
@@ -185,10 +209,10 @@ func (a *ChatToResponsesStreamAdapter) createOutputItemAddedEvent() []byte {
 // createContentPartAddedEvent creates the response.content_part.added event
 func (a *ChatToResponsesStreamAdapter) createContentPartAddedEvent() []byte {
 	event := map[string]any{
-		"type":         "response.content_part.added",
-		"item_id":      a.messageItemID,
-		"output_index": a.outputIndex,
-		"content_index": a.contentPartIndex,
+		"type":          "response.content_part.added",
+		"item_id":       a.messageItemID,
+		"output_index":  a.outputIndex,
+		"content_index": a.textContentIndex,
 		"part": map[string]any{
 			"type": "output_text",
 			"text": "",
@@ -204,8 +228,66 @@ func (a *ChatToResponsesStreamAdapter) createTextDeltaEvent(text string) []byte 
 		"type":          "response.output_text.delta",
 		"item_id":       a.messageItemID,
 		"output_index":  a.outputIndex,
-		"content_index": a.contentPartIndex,
+		"content_index": a.textContentIndex,
 		"delta":         text,
+	}
+	data, _ := common.Marshal(event)
+	return data
+}
+
+// createReasoningContentPartAddedEvent creates the response.content_part.added event for reasoning
+func (a *ChatToResponsesStreamAdapter) createReasoningContentPartAddedEvent() []byte {
+	event := map[string]any{
+		"type":          "response.content_part.added",
+		"item_id":       a.messageItemID,
+		"output_index":  a.outputIndex,
+		"content_index": a.reasoningContentIndex,
+		"part": map[string]any{
+			"type": "reasoning",
+			"text": "",
+		},
+	}
+	data, _ := common.Marshal(event)
+	return data
+}
+
+// createReasoningDeltaEvent creates the response.reasoning.delta event
+func (a *ChatToResponsesStreamAdapter) createReasoningDeltaEvent(text string) []byte {
+	event := map[string]any{
+		"type":          "response.reasoning.delta",
+		"item_id":       a.messageItemID,
+		"output_index":  a.outputIndex,
+		"content_index": a.reasoningContentIndex,
+		"delta":         text,
+	}
+	data, _ := common.Marshal(event)
+	return data
+}
+
+// createReasoningDoneEvent creates the response.reasoning.done event
+func (a *ChatToResponsesStreamAdapter) createReasoningDoneEvent() []byte {
+	event := map[string]any{
+		"type":          "response.reasoning.done",
+		"item_id":       a.messageItemID,
+		"output_index":  a.outputIndex,
+		"content_index": a.reasoningContentIndex,
+		"text":          "",
+	}
+	data, _ := common.Marshal(event)
+	return data
+}
+
+// createReasoningContentPartDoneEvent creates the response.content_part.done event for reasoning
+func (a *ChatToResponsesStreamAdapter) createReasoningContentPartDoneEvent() []byte {
+	event := map[string]any{
+		"type":          "response.content_part.done",
+		"item_id":       a.messageItemID,
+		"output_index":  a.outputIndex,
+		"content_index": a.reasoningContentIndex,
+		"part": map[string]any{
+			"type": "reasoning",
+			"text": "",
+		},
 	}
 	data, _ := common.Marshal(event)
 	return data
@@ -217,7 +299,7 @@ func (a *ChatToResponsesStreamAdapter) createTextDoneEvent() []byte {
 		"type":          "response.output_text.done",
 		"item_id":       a.messageItemID,
 		"output_index":  a.outputIndex,
-		"content_index": a.contentPartIndex,
+		"content_index": a.textContentIndex,
 		"text":          "", // Full text would be accumulated, but we don't track it
 	}
 	data, _ := common.Marshal(event)
@@ -230,7 +312,7 @@ func (a *ChatToResponsesStreamAdapter) createContentPartDoneEvent() []byte {
 		"type":          "response.content_part.done",
 		"item_id":       a.messageItemID,
 		"output_index":  a.outputIndex,
-		"content_index": a.contentPartIndex,
+		"content_index": a.textContentIndex,
 		"part": map[string]any{
 			"type": "output_text",
 			"text": "",
@@ -242,20 +324,17 @@ func (a *ChatToResponsesStreamAdapter) createContentPartDoneEvent() []byte {
 
 // createOutputItemDoneEvent creates the response.output_item.done event for message
 func (a *ChatToResponsesStreamAdapter) createOutputItemDoneEvent() []byte {
+	content := a.buildMessageContent(false)
+
 	event := map[string]any{
 		"type":         "response.output_item.done",
 		"output_index": a.outputIndex,
 		"item": map[string]any{
-			"type":   "message",
-			"id":     a.messageItemID,
-			"status": "completed",
-			"role":   "assistant",
-			"content": []map[string]any{
-				{
-					"type": "output_text",
-					"text": "",
-				},
-			},
+			"type":    "message",
+			"id":      a.messageItemID,
+			"status":  "completed",
+			"role":    "assistant",
+			"content": content,
 		},
 	}
 	data, _ := common.Marshal(event)
@@ -283,7 +362,7 @@ func (a *ChatToResponsesStreamAdapter) createFunctionCallAddedEvent(idx int, cal
 // createFunctionCallArgumentsDeltaEvent creates the response.function_call_arguments.delta event
 func (a *ChatToResponsesStreamAdapter) createFunctionCallArgumentsDeltaEvent(idx int, argsDelta string) []byte {
 	outputIdx := a.outputIndex
-	if a.hasTextContent {
+	if a.hasTextContent || a.hasReasoningContent {
 		outputIdx = idx + 1 // Adjust for message output
 	} else {
 		outputIdx = idx
@@ -302,7 +381,7 @@ func (a *ChatToResponsesStreamAdapter) createFunctionCallArgumentsDeltaEvent(idx
 // createFunctionCallArgumentsDoneEvent creates the response.function_call_arguments.done event
 func (a *ChatToResponsesStreamAdapter) createFunctionCallArgumentsDoneEvent(idx int) []byte {
 	outputIdx := idx
-	if a.hasTextContent {
+	if a.hasTextContent || a.hasReasoningContent {
 		outputIdx = idx + 1
 	}
 
@@ -319,7 +398,7 @@ func (a *ChatToResponsesStreamAdapter) createFunctionCallArgumentsDoneEvent(idx 
 // createFunctionCallDoneEvent creates the response.output_item.done event for function call
 func (a *ChatToResponsesStreamAdapter) createFunctionCallDoneEvent(idx int) []byte {
 	outputIdx := idx
-	if a.hasTextContent {
+	if a.hasTextContent || a.hasReasoningContent {
 		outputIdx = idx + 1
 	}
 
@@ -350,19 +429,15 @@ func (a *ChatToResponsesStreamAdapter) createResponseCompletedEvent(usage *dto.U
 	// Build output array
 	output := make([]map[string]any, 0)
 
-	if a.hasTextContent {
+	if a.hasTextContent || a.hasReasoningContent {
+		content := a.buildMessageContent(true)
+
 		output = append(output, map[string]any{
-			"type":   "message",
-			"id":     a.messageItemID,
-			"status": "completed",
-			"role":   "assistant",
-			"content": []map[string]any{
-				{
-					"type":        "output_text",
-					"text":        "",
-					"annotations": []any{},
-				},
-			},
+			"type":    "message",
+			"id":      a.messageItemID,
+			"status":  "completed",
+			"role":    "assistant",
+			"content": content,
 		})
 	}
 
@@ -410,4 +485,47 @@ func (a *ChatToResponsesStreamAdapter) createResponseCompletedEvent(usage *dto.U
 // GetResponseID returns the response ID
 func (a *ChatToResponsesStreamAdapter) GetResponseID() string {
 	return a.ResponseID
+}
+
+func (a *ChatToResponsesStreamAdapter) buildMessageContent(withAnnotations bool) []map[string]any {
+	parts := make([]map[string]any, 0, 2)
+	if !a.hasReasoningContent && !a.hasTextContent {
+		return parts
+	}
+
+	addReasoning := func() {
+		parts = append(parts, map[string]any{
+			"type": "reasoning",
+			"text": "",
+		})
+	}
+	addText := func() {
+		part := map[string]any{
+			"type": "output_text",
+			"text": "",
+		}
+		if withAnnotations {
+			part["annotations"] = []any{}
+		}
+		parts = append(parts, part)
+	}
+
+	if a.hasReasoningContent && a.hasTextContent {
+		if a.reasoningContentIndex <= a.textContentIndex {
+			addReasoning()
+			addText()
+		} else {
+			addText()
+			addReasoning()
+		}
+		return parts
+	}
+
+	if a.hasReasoningContent {
+		addReasoning()
+		return parts
+	}
+
+	addText()
+	return parts
 }
