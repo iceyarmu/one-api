@@ -1711,3 +1711,161 @@ func convertToolChoiceToGeminiConfig(toolChoice any) *dto.ToolConfig {
 	// Unsupported type, return nil
 	return nil
 }
+
+// GeminiResponsesHandler handles non-streaming Gemini responses and converts them to Responses API format
+func GeminiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	service.CloseResponseBodyGracefully(resp)
+
+	if common.DebugEnabled {
+		println("Gemini responseBody: ", string(responseBody))
+	}
+
+	var geminiResponse dto.GeminiChatResponse
+	err = common.Unmarshal(responseBody, &geminiResponse)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+
+	// Handle empty candidates
+	if len(geminiResponse.Candidates) == 0 {
+		usage := dto.Usage{
+			PromptTokens: geminiResponse.UsageMetadata.PromptTokenCount,
+		}
+		usage.CompletionTokenDetails.ReasoningTokens = geminiResponse.UsageMetadata.ThoughtsTokenCount
+
+		var newAPIError *types.NewAPIError
+		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
+			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
+			newAPIError = types.NewOpenAIError(
+				errors.New("request blocked by Gemini API: "+*geminiResponse.PromptFeedback.BlockReason),
+				types.ErrorCodePromptBlocked,
+				http.StatusBadRequest,
+			)
+		} else {
+			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, "gemini_empty_candidates")
+			newAPIError = types.NewOpenAIError(
+				errors.New("empty response from Gemini API"),
+				types.ErrorCodeEmptyResponse,
+				http.StatusInternalServerError,
+			)
+		}
+		return &usage, newAPIError
+	}
+
+	// Convert Gemini response to OpenAI Chat format
+	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
+	fullTextResponse.Model = info.UpstreamModelName
+
+	usage := dto.Usage{
+		PromptTokens:     geminiResponse.UsageMetadata.PromptTokenCount,
+		CompletionTokens: geminiResponse.UsageMetadata.CandidatesTokenCount,
+		TotalTokens:      geminiResponse.UsageMetadata.TotalTokenCount,
+	}
+	usage.CompletionTokenDetails.ReasoningTokens = geminiResponse.UsageMetadata.ThoughtsTokenCount
+	usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+
+	for _, detail := range geminiResponse.UsageMetadata.PromptTokensDetails {
+		if detail.Modality == "AUDIO" {
+			usage.PromptTokensDetails.AudioTokens = detail.TokenCount
+		} else if detail.Modality == "TEXT" {
+			usage.PromptTokensDetails.TextTokens = detail.TokenCount
+		}
+	}
+
+	fullTextResponse.Usage = usage
+
+	// Get original responses request from context
+	var originalReq *dto.OpenAIResponsesRequest
+	if req, exists := c.Get("responses_original_request"); exists {
+		originalReq = req.(*dto.OpenAIResponsesRequest)
+	}
+
+	// Convert Chat response to Responses format
+	responsesResponse := service.ChatCompletionsResponseToResponsesResponse(fullTextResponse, originalReq)
+
+	// Marshal and send response
+	jsonResponse, err := common.Marshal(responsesResponse)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
+	service.IOCopyBytesGracefully(c, resp, jsonResponse)
+	return &usage, nil
+}
+
+// GeminiResponsesStreamHandler handles streaming Gemini responses and converts them to Responses API stream format
+func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	// Get original responses request from context
+	var originalReq *dto.OpenAIResponsesRequest
+	if req, exists := c.Get("responses_original_request"); exists {
+		originalReq = req.(*dto.OpenAIResponsesRequest)
+	}
+
+	// Create stream adapter
+	streamAdapter := service.NewChatToResponsesStreamAdapter(originalReq)
+
+	id := helper.GetResponseID(c)
+	createAt := common.GetTimestamp()
+
+	var usage *dto.Usage
+	usage = &dto.Usage{}
+	var handlerErr *types.NewAPIError
+	firstChunk := true
+
+	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
+		var geminiResponse dto.GeminiChatResponse
+		err := common.UnmarshalJsonStr(data, &geminiResponse)
+		if err != nil {
+			common.SysLog("error unmarshalling stream response: " + err.Error())
+			handlerErr = types.NewError(err, types.ErrorCodeBadResponseBody)
+			return false
+		}
+
+		// Update usage from metadata
+		if geminiResponse.UsageMetadata.TotalTokenCount > 0 {
+			usage.PromptTokens = geminiResponse.UsageMetadata.PromptTokenCount
+			usage.CompletionTokens = geminiResponse.UsageMetadata.CandidatesTokenCount
+			usage.TotalTokens = geminiResponse.UsageMetadata.TotalTokenCount
+			usage.CompletionTokenDetails.ReasoningTokens = geminiResponse.UsageMetadata.ThoughtsTokenCount
+		}
+
+		// Convert Gemini stream to OpenAI Chat stream
+		oaiResponse, _ := streamResponseGeminiChat2OpenAI(&geminiResponse)
+		if oaiResponse == nil {
+			return true
+		}
+
+		oaiResponse.Id = id
+		oaiResponse.Created = createAt
+		oaiResponse.Model = info.UpstreamModelName
+
+		// Convert to Responses stream events
+		events := streamAdapter.ConvertChunk(oaiResponse)
+
+		// Send events
+		for _, eventData := range events {
+			if firstChunk {
+				helper.SetEventStreamHeaders(c)
+				firstChunk = false
+			}
+			_ = helper.StringData(c, string(eventData))
+		}
+
+		return true
+	})
+
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
+
+	// Send final done
+	if !firstChunk {
+		helper.Done(c)
+	}
+
+	return usage, nil
+}

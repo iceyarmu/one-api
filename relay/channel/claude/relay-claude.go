@@ -848,3 +848,159 @@ func mapToolChoice(toolChoice any, parallelToolCalls *bool) *dto.ClaudeToolChoic
 
 	return claudeToolChoice
 }
+
+// ClaudeResponsesHandler handles non-streaming Claude responses and converts them to Responses API format
+func ClaudeResponsesHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, requestMode int) (*dto.Usage, *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
+
+	claudeInfo := &ClaudeResponseInfo{
+		ResponseId:   helper.GetResponseID(c),
+		Created:      common.GetTimestamp(),
+		Model:        info.UpstreamModelName,
+		ResponseText: strings.Builder{},
+		Usage:        &dto.Usage{},
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
+	if common.DebugEnabled {
+		println("Claude responseBody: ", string(responseBody))
+	}
+
+	// Parse Claude response
+	var claudeResponse dto.ClaudeResponse
+	if err := common.Unmarshal(responseBody, &claudeResponse); err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
+	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+		return nil, types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+	}
+
+	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+
+	// Build usage
+	if requestMode == RequestModeCompletion {
+		claudeInfo.Usage = service.ResponseText2Usage(c, claudeResponse.Completion, info.UpstreamModelName, info.GetEstimatePromptTokens())
+	} else {
+		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
+		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
+		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
+		claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Usage.CacheReadInputTokens
+		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
+		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
+		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
+	}
+
+	// Convert Claude response to OpenAI Chat format
+	openaiResponse := ResponseClaude2OpenAI(requestMode, &claudeResponse)
+	openaiResponse.Usage = *claudeInfo.Usage
+
+	// Get original responses request from context
+	var originalReq *dto.OpenAIResponsesRequest
+	if req, exists := c.Get("responses_original_request"); exists {
+		originalReq = req.(*dto.OpenAIResponsesRequest)
+	}
+
+	// Convert Chat response to Responses format
+	responsesResponse := service.ChatCompletionsResponseToResponsesResponse(openaiResponse, originalReq)
+
+	// Marshal and send response
+	responseData, err := json.Marshal(responsesResponse)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
+	if claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
+		c.Set("claude_web_search_requests", claudeResponse.Usage.ServerToolUse.WebSearchRequests)
+	}
+
+	service.IOCopyBytesGracefully(c, resp, responseData)
+	return claudeInfo.Usage, nil
+}
+
+// ClaudeResponsesStreamHandler handles streaming Claude responses and converts them to Responses API stream format
+func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, requestMode int) (*dto.Usage, *types.NewAPIError) {
+	// Get original responses request from context
+	var originalReq *dto.OpenAIResponsesRequest
+	if req, exists := c.Get("responses_original_request"); exists {
+		originalReq = req.(*dto.OpenAIResponsesRequest)
+	}
+
+	// Create stream adapter
+	streamAdapter := service.NewChatToResponsesStreamAdapter(originalReq)
+
+	claudeInfo := &ClaudeResponseInfo{
+		ResponseId:   helper.GetResponseID(c),
+		Created:      common.GetTimestamp(),
+		Model:        info.UpstreamModelName,
+		ResponseText: strings.Builder{},
+		Usage:        &dto.Usage{},
+	}
+
+	var handlerErr *types.NewAPIError
+	firstChunk := true
+
+	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
+		var claudeResponse dto.ClaudeResponse
+		err := common.UnmarshalJsonStr(data, &claudeResponse)
+		if err != nil {
+			common.SysLog("error unmarshalling stream response: " + err.Error())
+			handlerErr = types.NewError(err, types.ErrorCodeBadResponseBody)
+			return false
+		}
+
+		if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+			handlerErr = types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+			return false
+		}
+
+		if claudeResponse.StopReason != "" {
+			maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+		}
+
+		// Convert Claude stream event to OpenAI Chat stream format
+		oaiResponse := StreamResponseClaude2OpenAI(requestMode, &claudeResponse)
+		if oaiResponse == nil {
+			// Update internal state even if we don't emit a chunk
+			FormatClaudeResponseInfo(requestMode, &claudeResponse, nil, claudeInfo)
+			return true
+		}
+
+		FormatClaudeResponseInfo(requestMode, &claudeResponse, oaiResponse, claudeInfo)
+
+		// Set model in adapter
+		if oaiResponse.Model != "" {
+			streamAdapter.Model = oaiResponse.Model
+		}
+
+		// Convert to Responses stream events
+		events := streamAdapter.ConvertChunk(oaiResponse)
+
+		// Send events
+		for _, eventData := range events {
+			if firstChunk {
+				helper.SetEventStreamHeaders(c)
+				firstChunk = false
+			}
+			_ = helper.StringData(c, string(eventData))
+		}
+
+		return true
+	})
+
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
+
+	// Send final usage if not already sent
+	if !firstChunk && claudeInfo.Done {
+		// The completed event should have been sent by the adapter
+		helper.Done(c)
+	}
+
+	return claudeInfo.Usage, nil
+}
