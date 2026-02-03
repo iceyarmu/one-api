@@ -212,6 +212,13 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				BudgetTokens: common.GetPointer[int](4096),
 			}
 		}
+		// Extended Thinking 必要配置
+		// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#important-considerations-when-using-extended-thinking
+		claudeRequest.TopP = 0
+		claudeRequest.Temperature = common.GetPointer[float64](1.0)
+		if claudeRequest.MaxTokens < 1280 {
+			claudeRequest.MaxTokens = 1280
+		}
 	}
 
 	// 指定了 reasoning 参数,覆盖 budgetTokens
@@ -226,6 +233,12 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			claudeRequest.Thinking = &dto.Thinking{
 				Type:         "enabled",
 				BudgetTokens: &budgetTokens,
+			}
+			// Extended Thinking 必要配置
+			claudeRequest.TopP = 0
+			claudeRequest.Temperature = common.GetPointer[float64](1.0)
+			if claudeRequest.MaxTokens < uint(budgetTokens)+256 {
+				claudeRequest.MaxTokens = uint(budgetTokens) + 256
 			}
 		}
 	}
