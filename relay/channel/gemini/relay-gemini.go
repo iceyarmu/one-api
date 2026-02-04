@@ -339,6 +339,12 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		codeExecution := false
 		urlContext := false
 		for _, tool := range textRequest.Tools {
+			// Check tool type (for Responses API web_search)
+			if tool.Type == "web_search" {
+				googleSearch = true
+				continue
+			}
+			// Check function name (for direct googleSearch calls)
 			if tool.Function.Name == "googleSearch" {
 				googleSearch = true
 				continue
