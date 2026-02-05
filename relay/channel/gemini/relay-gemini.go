@@ -68,12 +68,6 @@ func is25FlashLiteModel(modelName string) bool {
 	return strings.HasPrefix(modelName, "gemini-2.5-flash-lite")
 }
 
-// supportsNativeThinking 检查模型是否原生支持思考功能（无需后缀）
-// 简化规则：模型名包含 "-pro" 就属于思考模型
-func supportsNativeThinking(modelName string) bool {
-	return strings.Contains(modelName, "-pro")
-}
-
 // clampThinkingBudget 根据模型名称将预算限制在允许的范围内
 func clampThinkingBudget(modelName string, budget int) int {
 	isNew25Pro := isNew25ProModel(modelName)
@@ -197,21 +191,13 @@ func ThinkingAdaptor(geminiRequest *dto.GeminiChatRequest, info *relaycommon.Rel
 			}
 			info.ReasoningEffort = level
 		} else {
-			// 原生思考模型自动启用思考输出
-			if supportsNativeThinking(modelName) {
+			// 如果请求中包含 reasoning 参数，自动启用思考
+			if len(oaiRequest) > 0 && oaiRequest[0].ReasoningEffort != "" {
 				geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
 					IncludeThoughts: true,
 				}
-
-				// 如果有 MaxOutputTokens，根据配置百分比设置思考预算
-				if geminiRequest.GenerationConfig.MaxOutputTokens > 0 {
-					budgetTokens := model_setting.GetGeminiSettings().ThinkingAdapterBudgetTokensPercentage * float64(geminiRequest.GenerationConfig.MaxOutputTokens)
-					clampedBudget := clampThinkingBudget(modelName, int(budgetTokens))
-					geminiRequest.GenerationConfig.ThinkingConfig.ThinkingBudget = common.GetPointer(clampedBudget)
-				} else if len(oaiRequest) > 0 && oaiRequest[0].ReasoningEffort != "" {
-					// 如果有 reasoningEffort，根据其值设置思考预算
-					geminiRequest.GenerationConfig.ThinkingConfig.ThinkingBudget = common.GetPointer(clampThinkingBudgetByEffort(modelName, oaiRequest[0].ReasoningEffort))
-				}
+				// 根据 reasoningEffort 设置思考预算
+				geminiRequest.GenerationConfig.ThinkingConfig.ThinkingBudget = common.GetPointer(clampThinkingBudgetByEffort(modelName, oaiRequest[0].ReasoningEffort))
 			}
 		}
 	}
