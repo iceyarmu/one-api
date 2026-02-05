@@ -51,8 +51,29 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 
 	// Convert tools
 	var tools []dto.ToolCallRequest
+	var webSearchOptions *dto.WebSearchOptions
 	if len(req.Tools) > 0 {
 		tools = convertResponsesTools(req.Tools)
+
+		// Extract web_search tool from tools and convert to WebSearchOptions
+		// This is needed for Claude channel which expects WebSearchOptions field
+		var toolsMap []map[string]any
+		if err := common.Unmarshal(req.Tools, &toolsMap); err == nil {
+			for _, tool := range toolsMap {
+				if toolType, _ := tool["type"].(string); toolType == "web_search" {
+					webSearchOptions = &dto.WebSearchOptions{}
+					if searchContextSize, ok := tool["search_context_size"].(string); ok {
+						webSearchOptions.SearchContextSize = searchContextSize
+					}
+					if userLocation, ok := tool["user_location"]; ok {
+						if userLocationBytes, err := common.Marshal(userLocation); err == nil {
+							webSearchOptions.UserLocation = userLocationBytes
+						}
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// Convert tool_choice
@@ -83,6 +104,7 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 		ParallelTooCalls: parallelToolCalls,
 		Store:            req.Store,
 		Metadata:         req.Metadata,
+		WebSearchOptions: webSearchOptions,
 	}
 
 	// Set TopP only if provided
