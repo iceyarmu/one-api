@@ -112,9 +112,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	// Check if this is a Responses API request
 	if info.RelayMode == relayconstant.RelayModeResponses {
 		if info.IsStream {
-			return ClaudeResponsesStreamHandler(c, resp, info, a.RequestMode)
+			return ClaudeResponsesStreamHandler(c, resp, info)
 		} else {
-			return ClaudeResponsesHandler(c, resp, info, a.RequestMode)
+			return ClaudeResponsesHandler(c, resp, info)
 		}
 	}
 

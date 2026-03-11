@@ -836,7 +836,7 @@ func mapToolChoice(toolChoice any, parallelToolCalls *bool) *dto.ClaudeToolChoic
 }
 
 // ClaudeResponsesHandler handles non-streaming Claude responses and converts them to Responses API format
-func ClaudeResponsesHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, requestMode int) (*dto.Usage, *types.NewAPIError) {
+func ClaudeResponsesHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
 	claudeInfo := &ClaudeResponseInfo{
@@ -869,20 +869,16 @@ func ClaudeResponsesHandler(c *gin.Context, resp *http.Response, info *relaycomm
 	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
 
 	// Build usage
-	if requestMode == RequestModeCompletion {
-		claudeInfo.Usage = service.ResponseText2Usage(c, claudeResponse.Completion, info.UpstreamModelName, info.GetEstimatePromptTokens())
-	} else {
-		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
-		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
-		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
-		claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Usage.CacheReadInputTokens
-		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
-		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
-		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
-	}
+	claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
+	claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
+	claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
+	claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Usage.CacheReadInputTokens
+	claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
+	claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
+	claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
 
 	// Convert Claude response to OpenAI Chat format
-	openaiResponse := ResponseClaude2OpenAI(requestMode, &claudeResponse)
+	openaiResponse := ResponseClaude2OpenAI(&claudeResponse)
 	openaiResponse.Usage = *claudeInfo.Usage
 
 	// Get original responses request from context
@@ -909,7 +905,7 @@ func ClaudeResponsesHandler(c *gin.Context, resp *http.Response, info *relaycomm
 }
 
 // ClaudeResponsesStreamHandler handles streaming Claude responses and converts them to Responses API stream format
-func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, requestMode int) (*dto.Usage, *types.NewAPIError) {
+func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	// Get original responses request from context
 	var originalReq *dto.OpenAIResponsesRequest
 	if req, exists := c.Get("responses_original_request"); exists {
@@ -949,14 +945,14 @@ func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *rel
 		}
 
 		// Convert Claude stream event to OpenAI Chat stream format
-		oaiResponse := StreamResponseClaude2OpenAI(requestMode, &claudeResponse)
+		oaiResponse := StreamResponseClaude2OpenAI(&claudeResponse)
 		if oaiResponse == nil {
 			// Update internal state even if we don't emit a chunk
-			FormatClaudeResponseInfo(requestMode, &claudeResponse, nil, claudeInfo)
+			FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
 			return true
 		}
 
-		FormatClaudeResponseInfo(requestMode, &claudeResponse, oaiResponse, claudeInfo)
+		FormatClaudeResponseInfo(&claudeResponse, oaiResponse, claudeInfo)
 
 		// Set model in adapter
 		if oaiResponse.Model != "" {
