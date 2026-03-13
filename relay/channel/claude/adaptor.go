@@ -109,6 +109,8 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	info.FinalRequestRelayFormat = types.RelayFormatClaude
+
 	// Check if this is a Responses API request
 	if info.RelayMode == relayconstant.RelayModeResponses {
 		if info.IsStream {
